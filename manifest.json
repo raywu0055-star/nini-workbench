@@ -1,0 +1,68 @@
+{
+  "id": "nini-workbench",
+  "name": "nini's workbench",
+  "short_name": "nini",
+  "description": "nini的专属工作台 - 铁剂打卡、小红书运营、待产包整理",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#f5f7fa",
+  "theme_color": "#ff8fb1",
+  "categories": ["productivity", "lifestyle", "health"],
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "补水啦",
+      "short_name": "补水啦",
+      "description": "记录今日饮水量",
+      "url": "./index.html#water"
+    },
+    {
+      "name": "每日补剂打卡",
+      "short_name": "补剂打卡",
+      "description": "铁剂等补剂每日打卡",
+      "url": "./index.html#iron"
+    },
+    {
+      "name": "待产包整理",
+      "short_name": "待产包",
+      "description": "待产包清单整理",
+      "url": "./index.html#bag"
+    },
+    {
+      "name": "小红书运营",
+      "short_name": "小红书",
+      "description": "小红书内容运营",
+      "url": "./index.html#xhs"
+    }
+  ]
+}

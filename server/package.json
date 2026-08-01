@@ -1,0 +1,14 @@
+{
+  "name": "nini-workbench-push",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Optional Web Push server for nini's workbench (lets reminders fire even when the app is closed)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "web-push": "^3.6.6"
+  }
+}

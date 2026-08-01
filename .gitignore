@@ -1,0 +1,15 @@
+# dependencies
+node_modules/
+server/node_modules/
+
+# runtime state (regenerated on server start)
+server/subs.json
+server/jobs.json
+server/vapid.json
+
+# large source assets not used by the app at runtime
+avatar-nini.png
+A_cute_kawaii_style_avatar_ill_*.png
+
+# workbuddy project data
+.workbuddy/
