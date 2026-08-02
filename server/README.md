@@ -81,6 +81,41 @@ git push -u origin main
 
 ---
 
+---
+
+## 4.5 防止 Render 免费版休眠（保活）★ 关键
+
+Render **免费版**在闲置约 **15 分钟**后会自动休眠（进程挂起）。这会直接导致两个问题：
+
+1. **首次打开变慢**：服务休眠后下一次请求要先「冷启动」约 30 秒。
+2. **关 App 收不到提醒**：定时提醒由服务器到点发 push，服务器休眠时计时器不走动，到点了也没人发推送。
+
+> 本项目已把 App 启动改为「缓存优先」（打开即显示界面，不再白屏等待 30 秒），
+> 但**定时推送要真正发出，服务器到点时必须醒着**——这就是保活的意义。
+
+**解决办法：用一个外部监控定时 ping 服务器，让它始终处于活跃状态（< 15 分钟一次）。**
+
+### 方法一：UptimeRobot（推荐，免费）
+1. 打开 https://uptimerobot.com 注册/登录（免费）。
+2. **Add New Monitor** → Monitor Type 选 **HTTP(s)**。
+3. Friendly Name：`nini-workbench`
+4. URL：`https://你的地址/status`（如 `https://nini-workbench.onrender.com/status`）
+5. Monitoring Interval：选 **5 minutes**（免费档最小间隔；小于 15 分钟即可阻止休眠）。
+6. 点 **Create Monitor** 即可。
+
+> 想更稳可再加一个 Monitor 指向首页 `https://你的地址/`（双保险）。
+
+### 方法二：cron-job.org（免费备选）
+1. 打开 https://cron-job.org 注册/登录。
+2. **Create cronjob** → URL 填 `https://你的地址/status`。
+3. Schedule 设为每 **10 分钟**执行一次（Simple → Every 10 minutes）。
+4. 保存。
+
+### 方法三：升级 Render 付费
+升级到 Starter 套餐（约 $7/月）进程**常驻不休眠**，最省心但不是免费。
+
+---
+
 ## 5. 排错
 
 | 现象 | 解决 |
@@ -90,7 +125,7 @@ git push -u origin main
 | 没有「安装」按钮 | 地址必须是 **https**（Render 默认就是）；manifest 字段已校验完整 |
 | 推送订阅失败 | 服务器地址填的是 https 的 Render 地址，且已允许通知权限 |
 | 重新部署后收不到旧提醒 | 免费版每次部署后订阅可能失效，重开 App 设置开关重新订阅即可；设置了 VAPID 环境变量则更稳定 |
-| 免费版睡眠导致首次慢 / 收不到 | 用 [UptimeRobot](https://uptimerobot.com) 每 20 分钟 ping 一次保活 |
+| 免费版睡眠导致首次慢 / 收不到 | 配置保活：用 [UptimeRobot](https://uptimerobot.com) 每 5 分钟 ping 一次 `/status`（见 4.5 节） |
 
 ---
 

@@ -1758,6 +1758,11 @@ body.dark .reward-card { background: linear-gradient(160deg, #1f2937 0%, #3b1d33
           <span class="label">测试服务器推送</span>
           <span class="value" id="pushStatus">未开启</span>
         </div>
+        <div class="menu-row" id="pushDelayTestRow">
+          <div class="icon" style="background:#ede9fe;color:#7c3aed"><span style="font-size:14px">⏰</span></div>
+          <span class="label">1分钟后推送测试</span>
+          <span class="value" id="pushDelayStatus">点击设置</span>
+        </div>
       </div>
 
       <!-- Module settings hint -->
@@ -5518,6 +5523,7 @@ const App = {
       document.getElementById('guideRow').addEventListener('click', () => this.showSetupGuide());
       document.getElementById('pushToggleRow').addEventListener('click', () => this.togglePush());
       document.getElementById('pushTestRow').addEventListener('click', () => this.testServerPush());
+      document.getElementById('pushDelayTestRow').addEventListener('click', () => this.testServerPushDelayed());
       const psi = document.getElementById('pushServerInput');
       if (!Store.get('pushServer', '')) psi.value = 'http://localhost:3000';
       else psi.value = Store.get('pushServer', '');
@@ -6135,6 +6141,41 @@ const App = {
         else U.toast('发送失败，检查服务器状态');
       } catch (e) {
         U.toast('发送异常：' + (e && e.message ? e.message : e));
+      }
+      this.updatePushStatus();
+    },
+
+    // 模拟「用户关闭 App 后的后台通知」场景：
+    // 通过服务器 /schedule 设置一个 1 分钟后的 web-push，到点由 Service Worker 弹系统通知。
+    // 该定时任务运行在服务器端，因此即使此时 App 已完全退出/进入后台也能收到
+    // （前提是服务器保持在线，见 server/README.md 的「防止免费版休眠（保活）」一节）。
+    async testServerPushDelayed() {
+      const server = Store.get('pushServer', '');
+      if (!server) { U.toast('请先填写推送服务器地址'); return; }
+      if (!Store.get('pushEnabled', false)) { U.toast('请先打开「后台推送」开关'); return; }
+      if (!Store.get('pushSubscription', null)) {
+        U.toast('正在订阅…');
+        const ok = await PushManager2.subscribe(server);
+        if (!ok) { U.toast('订阅失败：检查服务器或通知权限'); return; }
+      }
+      const triggerAt = Date.now() + 60 * 1000;
+      U.toast('正在设置 1 分钟后后台推送…');
+      try {
+        const ok = await PushManager2.schedule(server, {
+          title: '⏰ 1分钟后台推送测试',
+          body: '这条由服务器在 App 关闭后定时推送，证明关 App 也能收到提醒！',
+          icon: 'icon-192.png',
+          tag: 'nini-delay-test'
+        }, triggerAt);
+        if (ok) {
+          U.toast('✓ 已设置：1分钟后后台推送，可关闭 App 测试');
+          const el = document.getElementById('pushDelayStatus');
+          if (el) el.textContent = '已设置 ✓ 可关App';
+        } else {
+          U.toast('设置失败，检查服务器状态');
+        }
+      } catch (e) {
+        U.toast('设置异常：' + (e && e.message ? e.message : e));
       }
       this.updatePushStatus();
     },
