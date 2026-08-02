@@ -105,6 +105,12 @@ const app = express();
 app.disable('x-powered-by'); // 不暴露技术栈
 app.use(express.json({ limit: '64kb' })); // 限制请求体大小，防内存耗尽
 
+// 非法 JSON 请求体（外部扫描器常发）：直接返回干净 400，避免抛堆栈日志
+app.use((err, req, res, next) => {
+  if (err && err.type === 'entity.parse.failed') return res.status(400).json({ error: 'invalid json' });
+  next(err);
+});
+
 // SECURITY（关键）: server/ 目录存放密钥(VAPID 私钥)与订阅数据，绝不能
 // 作为静态文件对外提供。在处理静态资源前拦截对 /server 的访问与路径穿越。
 app.use((req, res, next) => {
