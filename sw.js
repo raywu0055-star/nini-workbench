@@ -1,5 +1,5 @@
 // nini's workbench - Service Worker
-const CACHE_NAME = 'nini-workbench-v44';
+const CACHE_NAME = 'nini-workbench-v45';
 const ASSETS = [
   './',
   './index.html',
@@ -53,16 +53,21 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Same-origin: 页面文档走网络优先（保证更新即时生效），其它资源走缓存优先
+  // Same-origin: 文档走「缓存优先 + 后台刷新」(stale-while-revalidate)。
+  // 打开瞬间直接返回已缓存页面（<1s 秒开），后台静默拉取最新版写入缓存供下次使用。
+  // 这样即使 Render 冷启动/休眠，UI 也立即呈现，不再白屏等待 30 秒。
   if (event.request.destination === 'document') {
     event.respondWith(
-      fetch(event.request).then((resp) => {
-        if (resp.ok) {
-          const respClone = resp.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, respClone));
-        }
-        return resp;
-      }).catch(() => caches.match('./index.html'))
+      caches.match('./index.html').then((cached) => {
+        const network = fetch(event.request).then((resp) => {
+          if (resp && resp.ok) {
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, resp.clone()));
+          }
+          return resp;
+        }).catch(() => cached);
+        // 优先返回缓存以实现瞬时首屏；后台网络请求只用于刷新缓存
+        return cached || network;
+      })
     );
     return;
   }

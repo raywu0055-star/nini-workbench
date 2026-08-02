@@ -1822,7 +1822,8 @@ if ('serviceWorker' in navigator) {
       console.log('SW registered');
       // If Web Push is enabled, (re)subscribe now that SW is ready
       if (Store.get('pushEnabled', false) && Store.get('pushServer', '')) {
-        PushManager2.subscribe(Store.get('pushServer', ''));
+        // 后台静默订阅，不阻塞首屏；服务器冷启动时自动重试
+        PushManager2.subscribeWithRetry(Store.get('pushServer', ''));
       }
     }).catch(err => console.log('SW failed:', err));
   });
@@ -1994,10 +1995,19 @@ const THEMES = [
 
 /* ===== Web Push Manager (true background delivery, optional server) ===== */
 const PushManager2 = {
-  async subscribe(serverUrl) {
+  // 给 promise 加超时，避免沉睡的服务器把调用卡死（冷启动需数十秒）
+  withTimeout(p, ms, label) {
+    return Promise.race([
+      p,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout:' + (label || ''))), ms))
+    ]);
+  },
+  // 核心订阅逻辑。opts.silent=true 时不主动弹权限窗（用于启动期后台重试）
+  async _subscribeOnce(serverUrl, opts = {}) {
     try {
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
       if (!('Notification' in window) || Notification.permission !== 'granted') {
+        if (opts.silent) return false;
         const p = await Notification.requestPermission();
         if (p !== 'granted') return false;
       }
@@ -2011,11 +2021,14 @@ const PushManager2 = {
           applicationServerKey: this.urlBase64ToUint8Array(vapid)
         });
       }
-      await fetch(serverUrl.replace(/\/$/, '') + '/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(sub)
-      });
+      await this.withTimeout(
+        fetch(serverUrl.replace(/\/$/, '') + '/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sub)
+        }),
+        8000, 'subscribe'
+      );
       Store.set('pushSubscription', sub ? sub.toJSON() : null);
       return true;
     } catch (e) {
@@ -2023,9 +2036,30 @@ const PushManager2 = {
       return false;
     }
   },
+  // 启动期调用：后台静默重试（应对 Render 冷启动），绝不阻塞 UI、也不弹权限窗
+  async subscribeWithRetry(serverUrl, attempts = 5) {
+    for (let i = 0; i < attempts; i++) {
+      try {
+        if (await this._subscribeOnce(serverUrl, { silent: true })) {
+          console.log('[push] subscribed on attempt', i + 1);
+          return true;
+        }
+      } catch (e) {}
+      if (i < attempts - 1) await new Promise(r => setTimeout(r, 4000 * (i + 1)));
+    }
+    console.warn('[push] subscribe gave up after', attempts, 'attempts');
+    return false;
+  },
+  // 设置页主动订阅：保留原行为（可请求权限、立即返回）
+  async subscribe(serverUrl) {
+    return this._subscribeOnce(serverUrl, { silent: false });
+  },
   async getVapid(serverUrl) {
     try {
-      const res = await fetch(serverUrl.replace(/\/$/, '') + '/vapid');
+      const res = await this.withTimeout(
+        fetch(serverUrl.replace(/\/$/, '') + '/vapid'),
+        8000, 'vapid'
+      );
       const j = await res.json();
       return j.publicKey || null;
     } catch (e) { return null; }
@@ -2039,14 +2073,25 @@ const PushManager2 = {
     return output;
   },
   async schedule(serverUrl, payload, triggerAt) {
-    try {
-      await fetch(serverUrl.replace(/\/$/, '') + '/schedule', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ triggerAt, payload })
-      });
-      return true;
-    } catch (e) { return false; }
+    const once = async () => {
+      try {
+        await this.withTimeout(
+          fetch(serverUrl.replace(/\/$/, '') + '/schedule', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ triggerAt, payload })
+          }),
+          8000, 'schedule'
+        );
+        return true;
+      } catch (e) { return false; }
+    };
+    // 退避重试，应对服务器瞬时休眠导致的 /schedule 失败
+    for (let i = 0; i < 3; i++) {
+      if (await once()) return true;
+      if (i < 2) await new Promise(r => setTimeout(r, 3000 * (i + 1)));
+    }
+    return false;
   }
 };
 
