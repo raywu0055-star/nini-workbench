@@ -102,13 +102,52 @@ function armJob(job) {
 }
 
 const app = express();
-app.use(express.json());
+app.disable('x-powered-by'); // 不暴露技术栈
+app.use(express.json({ limit: '64kb' })); // 限制请求体大小，防内存耗尽
+
+// SECURITY（关键）: server/ 目录存放密钥(VAPID 私钥)与订阅数据，绝不能
+// 作为静态文件对外提供。在处理静态资源前拦截对 /server 的访问与路径穿越。
+app.use((req, res, next) => {
+  const p = decodeURIComponent(req.path);
+  if (p.startsWith('/server') || p.includes('..')) return res.status(404).end();
+  next();
+});
+
+// 推送接口防护：个人单用户应用也暴露公网，必须阻止匿名滥用。
+// 放行条件：请求携带正确共享密钥，或同源(Origin 的 host 与请求 host 一致，
+// 自动适配 localhost / Render / 自定义域名)。这样匿名扫描器 / curl 无法
+// 再伪造通知或注册垃圾订阅。
+const PUSH_SECRET = process.env.PUSH_SECRET || 'nini-workbench-dev';
+function gatePush(req, res, next) {
+  const origin = req.headers['origin'] || '';
+  const auth = req.headers['authorization'] || '';
+  if (auth === 'Bearer ' + PUSH_SECRET) return next();
+  if (origin) {
+    try {
+      if (new URL(origin).host === req.headers['host']) return next();
+    } catch (e) {}
+  }
+  return res.status(401).json({ error: 'unauthorized' });
+}
+
+// 简易按 IP 限流(内存)，防止接口被刷。
+const _rl = new Map();
+function rateLimit(req, res, next) {
+  const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown') + '';
+  const now = Date.now();
+  const w = _rl.get(ip) || { count: 0, ts: now };
+  if (now - w.ts > 60000) { w.count = 0; w.ts = now; }
+  w.count++;
+  _rl.set(ip, w);
+  if (w.count > 60) return res.status(429).json({ error: 'too many requests' });
+  next();
+}
 
 app.get('/vapid', (req, res) => res.json({ publicKey: vapidKeys.publicKey }));
 
-app.get('/status', (req, res) => res.json({ ok: true, subs: subs.size, jobs: jobs.length, vapid: !!vapidKeys }));
+app.get('/status', (req, res) => res.json({ ok: true, vapid: !!vapidKeys }));
 
-app.post('/subscribe', (req, res) => {
+app.post('/subscribe', gatePush, rateLimit, (req, res) => {
   const sub = req.body;
   if (!sub || !sub.endpoint) return res.status(400).json({ error: 'invalid subscription' });
   subs.add(JSON.stringify(sub));
@@ -116,13 +155,13 @@ app.post('/subscribe', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/notify', async (req, res) => {
+app.post('/notify', gatePush, rateLimit, async (req, res) => {
   const payload = (req.body && req.body.payload) ? req.body.payload : { title: 'nini 提醒', body: '' };
   const n = await broadcast(payload);
   res.json({ ok: true, sent: n });
 });
 
-app.post('/schedule', (req, res) => {
+app.post('/schedule', gatePush, rateLimit, (req, res) => {
   const body = req.body || {};
   const payload = body.payload || { title: 'nini 提醒', body: '' };
   const triggerAt = body.triggerAt || Date.now();

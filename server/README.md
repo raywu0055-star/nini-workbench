@@ -129,7 +129,38 @@ Render **免费版**在闲置约 **15 分钟**后会自动休眠（进程挂起�
 
 ---
 
+## 6. 安全加固（部署前必读）
+
+代码已内置以下防护，**重新部署后自动生效**：
+
+1. **禁止静态访问 `server/` 目录**（关键）
+   旧版 `express.static` 会把整个项目根对外提供，导致 `server/vapid.json`（含 VAPID 私钥）、
+   `server/subs.json`（设备推送 token）、`server/index.js`（源码）可被任何人直接下载。
+   现已在处理静态资源前拦截所有 `/server` 路径与 `..` 穿越，这些文件一律返回 404。
+
+2. **推送接口加同源校验 + 限流**
+   `POST /subscribe`、`/schedule`、`/notify` 现在要求请求**同源**（Origin 的 host 与本站一致，
+   自动适配 localhost / Render / 自定义域名），或携带 `PUSH_SECRET` 共享密钥；否则返回 401。
+   匿名扫描器 / curl 无法再伪造通知或注册垃圾订阅。另加了按 IP 的简易限流（60 次/分钟）。
+
+3. **隐藏技术栈**：关闭 `X-Powered-By: Express` 响应头。
+
+4. **密钥不在磁盘落库（推荐）**：在 Render **Environment** 里设置
+   `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`（见第 2 步），私钥只存于环境变量，永不写入磁盘、永不对外提供。
+
+### ⚠️ 本轮必须做的「密钥轮换」
+在修复**之前**，`/server/vapid.json` 的 VAPID 私钥已公开泄露。泄露的私钥等同于「他人可冒充本服务器
+向你的设备推送伪造通知」。请务必**重新部署一次**让服务生成新密钥（Render 免费版磁盘随部署重置，
+`vapid.json` 会被重新生成；如已按上文设置了 VAPID 环境变量则直接用你自己的密钥）。
+重新部署后旧订阅失效，重开 App 会自动重新订阅。
+
+### 可选：设置更强的 PUSH_SECRET
+Render **Environment** 添加 `PUSH_SECRET` = 一串随机字符串（如 `openssl rand -hex 16`）。
+不设置时默认 `nini-workbench-dev`（仅挡匿名请求，足够个人使用）。
+
+---
+
 ## 备注
-- 本推送服务器**无鉴权**（个人自用），请勿暴露给不信任人群；如需可加 token 校验。
 - 打卡 / 水量等数据存在**手机 localStorage**，不在服务器；服务器只负责转发 Web Push。
-- 接口总览：`GET /vapid`、`GET /status`、`POST /subscribe`、`POST /schedule`、`POST /notify`，并同时静态托管 PWA。
+- 接口总览：`GET /vapid`、`GET /status`、`POST /subscribe`、`POST /schedule`、`POST /notify`（后三个已加同源校验 + 限流），并同时静态托管 PWA（已禁止访问 `server/` 目录）。
+- 个人自用应用仍建议按上文设置 `VAPID_*` 与 `PUSH_SECRET` 环境变量，并避免把地址公开给不信任人群。
